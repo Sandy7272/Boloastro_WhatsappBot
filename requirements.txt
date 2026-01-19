@@ -1,0 +1,25 @@
+<<<<<<< HEAD
+flask
+twilio
+pyswisseph
+geopy
+pytz
+fpdf
+gunicorn
+sqlalchemy
+psycopg2-binary
+redis
+rq
+boto3
+python-dotenv
+razorpay
+=======
+fastapi
+uvicorn
+psycopg2-binary
+python-dotenv
+twilio
+python-multipart
+requests
+razorpay
+>>>>>>> 82cf4b2 (Initial commit)

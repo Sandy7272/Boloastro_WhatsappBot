@@ -1,0 +1,36 @@
+{
+    "users": {
+        "+917447337272": {
+            "step": "menu",
+            "name": "Hi",
+            "dob": "reset",
+            "time": "Hi",
+            "place": "30/09/200",
+            "kundali": {
+                "id": "975fb9cf-1c09-4d27-bbe7-d31083d5825d",
+                "status": "error",
+                "errors": [
+                    {
+                        "source": {
+                            "parameter": "/datetime"
+                        },
+                        "code": "1003",
+                        "title": "Invalid format",
+                        "detail": "Failed to parse time string (resetTHi:00) at position 0 (r): The timezone could not be found in the database. Value should be a string in ISO 8601 (YYYY-MM-DDTHH:MM:SSZ) format.  Example: 2004-02-12T15:19:21+05:30."
+                    },
+                    {
+                        "source": {
+                            "parameter": "/ayanamsa"
+                        },
+                        "code": "1002",
+                        "title": "Mandatory parameter missing",
+                        "detail": "Ayanamsa is mandatory. Allowed values are 1, 3 & 5."
+                    }
+                ]
+            }
+        }
+    },
+    "wallet": {
+        "+917447337272": 0
+    }
+}
