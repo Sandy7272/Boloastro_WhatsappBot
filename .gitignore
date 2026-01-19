@@ -4,3 +4,11 @@ __pycache__/
 .env
 generated_pdfs/
 instance/
+astrology_bot.db
+ngrok.exe
+package-lock.json
+Procfile
+railway.json
+.pytest_cache/
+debug.py
+.qodo/
