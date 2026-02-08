@@ -1,14 +1,47 @@
-venv/
+# =========================
+# Python
+# =========================
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# =========================
+# Virtual Environments
+# =========================
+venv/
 .env
-generated_pdfs/
 instance/
-astrology_bot.db
+
+# =========================
+# Database & Generated Files
+# =========================
+*.db
+generated_pdfs/
+
+# =========================
+# OS / Editor
+# =========================
+.DS_Store
+Thumbs.db
+.vscode/
+
+# =========================
+# Deployment / Tools
+# =========================
 ngrok.exe
-package-lock.json
 Procfile
 railway.json
-.pytest_cache/
-debug.py
+package-lock.json
+
+# =========================
+# Project specific
+# =========================
 .qodo/
+database_backup/
+
+# =========================
+# Logs (if you add later)
+# =========================
+*.log
