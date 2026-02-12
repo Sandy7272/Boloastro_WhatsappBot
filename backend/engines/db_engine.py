@@ -9,7 +9,6 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DB_PATH = BASE_DIR / "bot.db"
 
-
 # =========================
 # CONNECTION (FAST MODE)
 # =========================
@@ -17,24 +16,18 @@ DB_PATH = BASE_DIR / "bot.db"
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-
-    # ⚡ Performance tuning
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA synchronous=NORMAL;")
-
     return conn
-
 
 # =========================
 # INIT DATABASE
 # =========================
 
 def init_db():
-
     conn = get_conn()
     cur = conn.cursor()
 
-    # ---------------- USERS ----------------
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +37,6 @@ def init_db():
     )
     """)
 
-    # ---------------- SESSIONS ----------------
     cur.execute("""
     CREATE TABLE IF NOT EXISTS sessions (
         phone TEXT PRIMARY KEY,
@@ -54,7 +46,17 @@ def init_db():
     )
     """)
 
-    # ---------------- KUNDALI CACHE ----------------
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS purchases (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone TEXT,
+        product TEXT,
+        status TEXT,
+        credits INTEGER DEFAULT 0,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS kundali_cache (
         hash TEXT PRIMARY KEY,
@@ -63,7 +65,6 @@ def init_db():
     )
     """)
 
-    # ---------------- AI CACHE ----------------
     cur.execute("""
     CREATE TABLE IF NOT EXISTS ai_cache (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -74,7 +75,6 @@ def init_db():
     )
     """)
 
-    # ---------------- PAYMENTS ----------------
     cur.execute("""
     CREATE TABLE IF NOT EXISTS payments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -85,10 +85,6 @@ def init_db():
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
-
-    # =========================
-    # 📊 ANALYTICS
-    # =========================
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS message_logs (
@@ -108,10 +104,6 @@ def init_db():
     )
     """)
 
-    # =========================
-    # 💰 API USAGE + COST
-    # =========================
-
     cur.execute("""
     CREATE TABLE IF NOT EXISTS api_usage (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -121,10 +113,6 @@ def init_db():
     )
     """)
 
-    # =========================
-    # 💳 API CREDITS TRACKER
-    # =========================
-
     cur.execute("""
     CREATE TABLE IF NOT EXISTS api_credits (
         service TEXT PRIMARY KEY,
@@ -133,144 +121,99 @@ def init_db():
     )
     """)
 
-    # Default credits (you can change anytime)
     cur.execute("""
-    INSERT OR IGNORE INTO api_credits(service, total, used)
-    VALUES 
-        ('OPENAI', 1000, 0),
-        ('PROKERALA', 1000, 0)
+    INSERT OR IGNORE INTO api_credits(service,total,used)
+    VALUES ('OPENAI',1000,0),('PROKERALA',1000,0)
     """)
 
     conn.commit()
     conn.close()
 
-
 # =========================
-# API CREDITS HELPERS
+# PURCHASE HELPERS
 # =========================
 
-def set_api_credits(service, total):
-
+def grant_qna_pack(phone, credits=4):
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("""
-    INSERT OR REPLACE INTO api_credits(service,total,used)
-    VALUES(?,?, COALESCE(
-        (SELECT used FROM api_credits WHERE service=?), 0
-    ))
-    """, (service, total, service))
-
+    INSERT INTO purchases(phone, product, status, credits)
+    VALUES (?, 'QNA', 'ACTIVE', ?)
+    """, (phone, credits))
     conn.commit()
     conn.close()
 
-
-def use_api_credit(service, amount=1):
-
+def use_qna_credit(phone):
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("""
-    UPDATE api_credits
-    SET used = used + ?
-    WHERE service=?
-    """, (amount, service))
-
+    UPDATE purchases
+    SET credits = credits - 1
+    WHERE phone=? AND product='QNA' AND credits > 0
+    """, (phone,))
     conn.commit()
     conn.close()
 
-
-def get_api_credits(service):
-
+def get_qna_credits(phone):
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("""
-    SELECT total, used FROM api_credits WHERE service=?
-    """, (service,))
-
+    SELECT credits FROM purchases
+    WHERE phone=? AND product='QNA'
+    ORDER BY created_at DESC LIMIT 1
+    """, (phone,))
     row = cur.fetchone()
     conn.close()
+    return row["credits"] if row else 0
 
-    if not row:
-        return 0, 0
-
-    return row["total"], row["used"]
-
-
-# =========================
-# ANALYTICS HELPERS
-# =========================
-
-def log_message(phone, message):
-
+def mark_kundali_purchased(phone):
     conn = get_conn()
     cur = conn.cursor()
-
-    cur.execute(
-        "INSERT INTO message_logs(phone,message) VALUES (?,?)",
-        (phone, message)
-    )
-
+    cur.execute("""
+    INSERT INTO purchases(phone, product, status)
+    VALUES (?, 'KUNDALI', 'ACTIVE')
+    """, (phone,))
     conn.commit()
     conn.close()
 
-
-def log_question(phone, question):
-
+def has_kundali_access(phone):
     conn = get_conn()
     cur = conn.cursor()
-
-    cur.execute(
-        "INSERT INTO question_logs(phone,question) VALUES (?,?)",
-        (phone, question)
-    )
-
-    conn.commit()
+    cur.execute("""
+    SELECT id FROM purchases
+    WHERE phone=? AND product='KUNDALI' AND status='ACTIVE'
+    """, (phone,))
+    row = cur.fetchone()
     conn.close()
+    return True if row else False
 
-
-def log_api_usage(service, cost):
-
+def mark_milan_purchased(phone):
     conn = get_conn()
     cur = conn.cursor()
-
-    cur.execute(
-        "INSERT INTO api_usage(service,cost) VALUES (?,?)",
-        (service, cost)
-    )
-
+    cur.execute("""
+    INSERT INTO purchases(phone, product, status)
+    VALUES (?, 'MILAN', 'ACTIVE')
+    """, (phone,))
     conn.commit()
     conn.close()
-
 
 # =========================
 # SESSION HELPERS
 # =========================
 
 def get_session(phone):
-
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("SELECT * FROM sessions WHERE phone=?", (phone,))
     row = cur.fetchone()
     conn.close()
-
     if not row:
         return None
-
-    return {
-        "step": row["step"],
-        "data": json.loads(row["data"]) if row["data"] else {}
-    }
-
+    return {"step": row["step"], "data": json.loads(row["data"]) if row["data"] else {}}
 
 def save_session(phone, step, data):
-
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("""
     INSERT INTO sessions(phone,step,data)
     VALUES(?,?,?)
@@ -279,144 +222,118 @@ def save_session(phone, step, data):
         data=excluded.data,
         updated_at=CURRENT_TIMESTAMP
     """, (phone, step, json.dumps(data)))
-
     conn.commit()
     conn.close()
 
-
 def clear_session(phone):
-
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("DELETE FROM sessions WHERE phone=?", (phone,))
     conn.commit()
     conn.close()
-
 
 # =========================
 # KUNDALI CACHE
 # =========================
 
 def get_kundali_cache(hash_key):
-
     conn = get_conn()
     cur = conn.cursor()
-
-    cur.execute(
-        "SELECT payload FROM kundali_cache WHERE hash=?",
-        (hash_key,)
-    )
-
+    cur.execute("SELECT payload FROM kundali_cache WHERE hash=?", (hash_key,))
     row = cur.fetchone()
     conn.close()
-
-    if row:
-        return json.loads(row["payload"])
-
-    return None
-
+    return json.loads(row["payload"]) if row else None
 
 def save_kundali_cache(hash_key, payload):
-
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("""
     INSERT OR REPLACE INTO kundali_cache(hash,payload)
     VALUES(?,?)
     """, (hash_key, json.dumps(payload)))
-
     conn.commit()
     conn.close()
 
-
 # =========================
-# AI CACHE
+# AI CACHE (BACKWARD COMPATIBLE)
 # =========================
 
 def get_ai_cached_answer(phone, question):
-
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("""
     SELECT answer FROM ai_cache
     WHERE phone=? AND question=?
+    ORDER BY created_at DESC LIMIT 1
     """, (phone, question))
-
     row = cur.fetchone()
     conn.close()
-
     return row["answer"] if row else None
 
-
 def save_ai_answer(phone, question, answer):
-
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("""
     INSERT INTO ai_cache(phone,question,answer)
     VALUES(?,?,?)
     """, (phone, question, answer))
-
     conn.commit()
     conn.close()
 
-
 # =========================
-# PAYMENTS
+# API CREDIT HELPERS
 # =========================
 
-def save_payment(phone, amount, status, reference=None):
-
+def use_api_credit(service, amount=1):
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("""
-    INSERT INTO payments(phone,amount,status,reference)
-    VALUES(?,?,?,?)
-    """, (phone, amount, status, reference))
-
+    UPDATE api_credits SET used = used + ? WHERE service=?
+    """, (amount, service))
     conn.commit()
     conn.close()
 
-
-def get_latest_payment(phone):
-
+def get_api_credits(service):
     conn = get_conn()
     cur = conn.cursor()
-
-    cur.execute("""
-    SELECT * FROM payments
-    WHERE phone=?
-    ORDER BY created_at DESC
-    LIMIT 1
-    """, (phone,))
-
+    cur.execute("SELECT total,used FROM api_credits WHERE service=?", (service,))
     row = cur.fetchone()
     conn.close()
-
-    return row
+    if not row:
+        return 0, 0
+    return row["total"], row["used"]
 
 # =========================
-# USER HELPER
+# LOGGING HELPERS
 # =========================
+
+def log_message(phone, message):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO message_logs(phone,message) VALUES (?,?)", (phone, message))
+    conn.commit()
+    conn.close()
+
+def log_question(phone, question):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO question_logs(phone,question) VALUES (?,?)", (phone, question))
+    conn.commit()
+    conn.close()
+
+def log_api_usage(service, cost):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO api_usage(service,cost) VALUES (?,?)", (service, cost))
+    conn.commit()
+    conn.close()
 
 def get_or_create_user(phone, name=None):
-
     conn = get_conn()
     cur = conn.cursor()
-
     cur.execute("SELECT id FROM users WHERE phone=?", (phone,))
     row = cur.fetchone()
-
     if not row:
-        cur.execute(
-            "INSERT INTO users(phone, name) VALUES (?,?)",
-            (phone, name)
-        )
+        cur.execute("INSERT INTO users(phone,name) VALUES (?,?)", (phone, name))
         conn.commit()
-
     conn.close()

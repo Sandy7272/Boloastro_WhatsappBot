@@ -6,7 +6,14 @@ from backend.engines.db_engine import (
     clear_session,
     get_or_create_user,
     log_message,
-    log_question
+    log_question,
+
+    grant_qna_pack,
+    use_qna_credit,
+    get_qna_credits,
+    mark_kundali_purchased,
+    has_kundali_access,
+    mark_milan_purchased
 )
 
 from backend.engines.astro_engine import get_kundali_cached
@@ -18,7 +25,6 @@ from backend.utils.whatsapp_buttons import (
     main_menu,
     language_menu,
     astrology_system_menu,
-    confirm_menu,
     payment_menu,
     qna_menu,
     qna_ready_message,
@@ -28,17 +34,37 @@ from backend.utils.whatsapp_buttons import (
 logger = logging.getLogger(__name__)
 
 
-# =========================
-# RESET
-# =========================
+# ================= RESET =================
 
 def reset(phone):
-    save_session(phone, "MENU", {"lang": "MR", "preview_used": False})
+    save_session(phone, "MENU", {
+        "lang": "MR",
+        "preview_used": False
+    })
 
 
-# =========================
-# TEXT
-# =========================
+# ================= PREMIUM LOADER =================
+
+LOADER = {
+    "EN": [
+        "🔭 Calculating planetary positions...",
+        "📜 Reading your birth chart...",
+        "✨ Preparing personalized insights..."
+    ],
+    "HI": [
+        "🔭 ग्रह स्थिति देख रहे हैं...",
+        "📜 कुंडली विश्लेषण...",
+        "✨ आपकी भविष्यवाणी तैयार हो रही है..."
+    ],
+    "MR": [
+        "🔭 ग्रह स्थिती तपासत आहोत...",
+        "📜 कुंडली विश्लेषण सुरू आहे...",
+        "✨ तुमचे वैयक्तिक मार्गदर्शन तयार होतेय..."
+    ]
+}
+
+
+# ================= TEXT =================
 
 TEXT = {
     "ASK_NAME": {
@@ -48,45 +74,36 @@ TEXT = {
     },
     "ASK_DOB": {
         "EN": "📅 Enter Date of Birth (DD-MM-YYYY)",
-        "HI": "📅 जन्म तिथि दर्ज करें (DD-MM-YYYY)",
-        "MR": "📅 जन्म तारीख टाका (DD-MM-YYYY)"
+        "HI": "📅 जन्म तिथि दर्ज करें",
+        "MR": "📅 जन्म तारीख टाका"
     },
     "ASK_TIME": {
         "EN": "⏰ Enter Birth Time (HH:MM AM/PM)",
-        "HI": "⏰ जन्म समय दर्ज करें (HH:MM AM/PM)",
-        "MR": "⏰ जन्म वेळ टाका (HH:MM AM/PM)"
+        "HI": "⏰ जन्म समय दर्ज करें",
+        "MR": "⏰ जन्म वेळ टाका"
     },
     "ASK_PLACE": {
-        "EN": "📍 Enter Birth Place (city only)",
-        "HI": "📍 जन्म स्थान दर्ज करें (केवल शहर)",
-        "MR": "📍 जन्म ठिकाण टाका (फक्त शहर)"
+        "EN": "📍 Enter Birth City (example: Pune)",
+        "HI": "📍 जन्म स्थान लिखें",
+        "MR": "📍 जन्म ठिकाण टाका"
     },
     "INVALID_PLACE": {
-        "EN": "❌ Place not found. Please enter city name only (e.g. Pune)",
-        "HI": "❌ स्थान सापडले नाही. फक्त शहराचे नाव लिहा (उदा. Pune)",
-        "MR": "❌ ठिकाण सापडले नाही. फक्त शहराचे नाव टाका (उदा. Pune)"
-    },
-    "PREVIEW_NOTICE": {
-        "EN": "✨ Here is a FREE short preview. For full detailed prediction, please upgrade 💳",
-        "HI": "✨ यह एक मुफ्त झलक है। पूरी भविष्यवाणी के लिए भुगतान करें 💳",
-        "MR": "✨ हा मोफत प्रिव्ह्यू आहे. पूर्ण भविष्यवाणीसाठी अपग्रेड करा 💳"
+        "EN": "❌ City not found.",
+        "HI": "❌ स्थान नहीं मिला।",
+        "MR": "❌ ठिकाण सापडले नाही."
     }
 }
 
 
-# =========================
-# MAIN FSM
-# =========================
+# ================= MAIN FSM =================
 
 def process_message(phone, msg):
 
-    # 📊 Analytics
     get_or_create_user(phone)
     log_message(phone, msg)
 
     msg = msg.strip()
 
-    # ---------- RESET ----------
     if msg.lower() in ["hi", "start", "reset"]:
         reset(phone)
         return main_menu("MR")
@@ -99,11 +116,10 @@ def process_message(phone, msg):
 
     step = s["step"]
     data = s["data"]
-
     lang = data.get("lang", "MR")
-    preview_used = data.get("preview_used", False)
 
-    # ---------- MENU ----------
+    # ================= MENU =================
+
     if step == "MENU":
 
         if msg == "1":
@@ -117,15 +133,21 @@ def process_message(phone, msg):
             return astrology_system_menu(lang)
 
         if msg == "3":
+            data["mode"] = "MILAN"
+            save_session(phone, "ASTRO_SYSTEM", data)
+            return astrology_system_menu(lang)
+
+        if msg == "4":
             save_session(phone, "LANG", data)
             return language_menu()
 
-        if msg == "4":
+        if msg == "5":
             return help_menu(lang)
 
         return main_menu(lang)
 
-    # ---------- ASTRO SYSTEM ----------
+    # ================= ASTRO SYSTEM =================
+
     if step == "ASTRO_SYSTEM":
 
         if msg == "1":
@@ -138,7 +160,8 @@ def process_message(phone, msg):
         save_session(phone, "ASK_NAME", data)
         return TEXT["ASK_NAME"][lang]
 
-    # ---------- LANGUAGE ----------
+    # ================= LANGUAGE =================
+
     if step == "LANG":
 
         if msg == "1":
@@ -151,15 +174,15 @@ def process_message(phone, msg):
             return language_menu()
 
         save_session(phone, "MENU", data)
-        return "✅ Language updated\n\n" + main_menu(data["lang"])
+        return main_menu(data["lang"])
 
-    # ---------- ASK NAME ----------
+    # ================= COLLECT DETAILS =================
+
     if step == "ASK_NAME":
         data["name"] = msg
         save_session(phone, "ASK_DOB", data)
         return TEXT["ASK_DOB"][lang]
 
-    # ---------- ASK DOB ----------
     if step == "ASK_DOB":
 
         if not valid_dob(msg):
@@ -169,7 +192,6 @@ def process_message(phone, msg):
         save_session(phone, "ASK_TIME", data)
         return TEXT["ASK_TIME"][lang]
 
-    # ---------- ASK TIME ----------
     if step == "ASK_TIME":
 
         if not valid_time(msg):
@@ -179,11 +201,11 @@ def process_message(phone, msg):
         save_session(phone, "ASK_PLACE", data)
         return TEXT["ASK_PLACE"][lang]
 
-    # ---------- ASK PLACE ----------
+    # ================= PLACE =================
+
     if step == "ASK_PLACE":
 
         data["place"] = msg
-
         kundali = get_kundali_cached(data)
 
         if not kundali:
@@ -191,54 +213,74 @@ def process_message(phone, msg):
 
         data["kundali"] = kundali
 
-        # Go to QNA directly
-        save_session(phone, "QNA", data)
+        loader_text = "\n".join(LOADER.get(lang, LOADER["EN"]))
 
-        return qna_ready_message(lang) + "\n\n" + qna_menu(lang)
+        # ---- KUNDALI ----
+        if data["mode"] == "KUNDALI":
 
-    # ---------- QNA ----------
+            if has_kundali_access(phone):
+                return loader_text + "\n\nYour kundali already unlocked."
+
+            save_session(phone, "PAY_KUNDALI", data)
+            return loader_text + "\n\n" + payment_menu(create_order(phone), lang)
+
+        # ---- QNA ----
+        if data["mode"] == "QNA":
+            save_session(phone, "QNA", data)
+            return loader_text + "\n\n" + qna_ready_message(lang) + "\n\n" + qna_menu(lang)
+
+        # ---- MILAN ----
+        if data["mode"] == "MILAN":
+            save_session(phone, "PAY_MILAN", data)
+            return loader_text + "\n\n" + payment_menu(create_order(phone), lang)
+
+    # ================= PAYMENTS =================
+
+    if step == "PAY_KUNDALI":
+
+        if verify_payment(phone):
+            mark_kundali_purchased(phone)
+            save_session(phone, "MENU", data)
+            return "✅ Your premium kundali is unlocked."
+
+        return payment_menu(create_order(phone), lang)
+
+    if step == "PAY_MILAN":
+
+        if verify_payment(phone):
+            mark_milan_purchased(phone)
+            save_session(phone, "MENU", data)
+            return "✅ Kundali Milan unlocked."
+
+        return payment_menu(create_order(phone), lang)
+
+    # ================= QNA =================
+
     if step == "QNA":
 
-        PRESET = {
-            "1": {"EN": "Career prediction", "HI": "करियर भविष्यवाणी", "MR": "करिअर भविष्यवाणी"},
-            "2": {"EN": "Love and marriage prediction", "HI": "प्रेम आणि विवाह भविष्यवाणी", "MR": "प्रेम आणि विवाह भविष्यवाणी"},
-            "3": {"EN": "Finance and stability prediction", "HI": "आर्थिक स्थिरता भविष्यवाणी", "MR": "आर्थिक स्थिरता भविष्यवाणी"}
-        }
+        credits = get_qna_credits(phone)
 
-        question = PRESET[msg][lang] if msg in PRESET else msg
+        if credits <= 0:
 
-        log_question(phone, question)
+            if verify_payment(phone):
+                grant_qna_pack(phone, 4)
+                credits = 4
+            else:
+                return payment_menu(create_order(phone), lang)
 
-        # ----------------------------
-        # 🎁 FREE PREVIEW (ONE TIME)
-        # ----------------------------
+        use_qna_credit(phone)
+        remaining = credits - 1
 
-        if not preview_used:
+        log_question(phone, msg)
+        answer = ask_ai(phone, msg, data)
 
-            data["preview_used"] = True
-            save_session(phone, "QNA", data)
+        return (
+            answer +
+            f"\n\nQuestions remaining: {remaining}" +
+            "\n\n" + qna_menu(lang)
+        )
 
-            short_preview = ask_ai(phone, question, data)
+    # ================= FALLBACK =================
 
-            return (
-                short_preview[:600] +  # short snippet
-                "\n\n" +
-                TEXT["PREVIEW_NOTICE"][lang] +
-                "\n\n" +
-                payment_menu(create_order(phone), lang)
-            )
-
-        # ----------------------------
-        # 💳 PAID FLOW
-        # ----------------------------
-
-        if not verify_payment(phone):
-            return payment_menu(create_order(phone), lang)
-
-        full_answer = ask_ai(phone, question, data)
-
-        return full_answer + "\n\n" + qna_menu(lang)
-
-    # ---------- FALLBACK ----------
     reset(phone)
     return main_menu(lang)

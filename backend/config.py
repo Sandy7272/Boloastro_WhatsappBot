@@ -1,10 +1,6 @@
 import os
 from dotenv import load_dotenv
 
-# =========================
-# LOAD ENVIRONMENT
-# =========================
-
 load_dotenv()
 
 
@@ -16,10 +12,12 @@ class Config:
     DEBUG = os.getenv("DEBUG", "False").lower() in ["true", "1"]
 
     ENV = os.getenv("ENV", "DEV")
-    PRICE = int(os.getenv("PRICE", 299))
+
+    # PRICING
+    KUNDALI_PRICE = int(os.getenv("KUNDALI_PRICE", 200))
+    QNA_PRICE = int(os.getenv("QNA_PRICE", 99))
 
     # ---------------- DATABASE ----------------
-    # (You are using SQLite in Phase 1)
 
     DB_URL = os.getenv(
         "DB_URL",
@@ -29,7 +27,7 @@ class Config:
     SQLALCHEMY_DATABASE_URI = DB_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # ---------------- REDIS (for future scaling) ----------------
+    # ---------------- REDIS ----------------
 
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
