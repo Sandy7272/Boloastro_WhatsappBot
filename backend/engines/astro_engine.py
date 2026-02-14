@@ -3,7 +3,7 @@ import hashlib
 import json
 
 from backend.services.geocode import geocode_city
-from backend.services.prokerala import get_prokerala_data
+from backend.services.prokerala import get_kundali_data as get_prokerala_data
 from backend.engines.db_engine import (
     get_kundali_cache,
     save_kundali_cache,

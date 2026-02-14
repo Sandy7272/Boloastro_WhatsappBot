@@ -1,197 +1,196 @@
+import re
 import requests
 import logging
-import time
 from datetime import datetime
-import pytz
-
 from backend.config import Config
 
 logger = logging.getLogger(__name__)
 
-BASE_URL = "https://api.prokerala.com/v2/astrology/kundli"
-TOKEN_URL = "https://api.prokerala.com/token"
-
-# =========================
-# TOKEN CACHE (IN MEMORY)
-# =========================
-
-_CACHED_TOKEN = None
-_TOKEN_EXPIRY = 0
-
-
-# =========================
-# ACCESS TOKEN
-# =========================
 
 def get_access_token():
-    """
-    Automatically generates or reuses Prokerala Access Token
-    """
-
-    global _CACHED_TOKEN, _TOKEN_EXPIRY
-
-    # 1️⃣ In-memory token cache
-    if _CACHED_TOKEN and time.time() < _TOKEN_EXPIRY:
-        return _CACHED_TOKEN
-
-    # 2️⃣ Token from .env (if manually set)
-    env_token = Config.PROKERALA_ACCESS_TOKEN
-
-    if env_token and isinstance(env_token, str) and env_token.strip():
-        if env_token.count(".") == 2:   # JWT format check
-            return env_token.strip()
-
-    # 3️⃣ Generate new token from API
-    logger.info("🔄 Generating new Prokerala access token...")
-
-    payload = {
-        "grant_type": "client_credentials",
-        "client_id": Config.PROKERALA_CLIENT_ID,
-        "client_secret": Config.PROKERALA_CLIENT_SECRET
-    }
-
+    """Get access token from Prokerala API"""
     try:
-        response = requests.post(TOKEN_URL, data=payload, timeout=10)
-
-        if response.status_code != 200:
-            logger.error(f"❌ Token generation failed: {response.text}")
-            return None
-
-        data = response.json()
-
-        new_token = data.get("access_token")
-        expires_in = data.get("expires_in", 3600)
-
-        _CACHED_TOKEN = new_token
-        _TOKEN_EXPIRY = time.time() + expires_in - 60
-
-        logger.info("✅ Prokerala token generated")
-
-        return new_token
-
-    except Exception as e:
-        logger.error(f"❌ Token request error: {e}")
-        return None
-
-
-# =========================
-# MAIN PROKERALA API CALL
-# =========================
-
-def get_prokerala_data(dob, time_str, latitude, longitude, ayanamsa=1):
-    """
-    Fetch kundali data from Prokerala Astrology API
-    Includes sandbox fallback handling
-    """
-
-    # -------------------------
-    # GET TOKEN
-    # -------------------------
-
-    token = get_access_token()
-
-    if not token:
-        return None
-
-    # -------------------------
-    # PREPARE DATETIME
-    # -------------------------
-
-    try:
-        local_tz = pytz.timezone("Asia/Kolkata")
-
-        dt = datetime.strptime(
-            f"{dob} {time_str}",
-            "%d-%m-%Y %I:%M %p"
-        )
-
-        dt = local_tz.localize(dt)
-        iso_datetime = dt.isoformat()
-
-    except Exception as e:
-        logger.error(f"❌ Date parsing error: {e}")
-        return None
-
-    # -------------------------
-    # PREPARE REQUEST
-    # -------------------------
-
-    params = {
-        "ayanamsa": ayanamsa,
-        "coordinates": f"{latitude},{longitude}",
-        "datetime": iso_datetime,
-        "chart_type": "rasi"
-    }
-
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json"
-    }
-
-    logger.info(f"🌌 Prokerala request -> {iso_datetime}")
-
-    try:
-        # -------------------------
-        # FIRST ATTEMPT
-        # -------------------------
-        response = requests.get(
-            BASE_URL,
-            params=params,
-            headers=headers,
-            timeout=15
-        )
-
-        # -------------------------
-        # SANDBOX FIX
-        # -------------------------
-        if response.status_code == 400 and "sandbox" in response.text.lower():
-            logger.warning("⚠️ Sandbox limit detected — retrying with Jan 1st")
-
-            dt_sandbox = dt.replace(month=1, day=1)
-            params["datetime"] = dt_sandbox.isoformat()
-
-            response = requests.get(
-                BASE_URL,
-                params=params,
-                headers=headers,
-                timeout=15
-            )
-
-        # -------------------------
-        # AUTH ERROR
-        # -------------------------
-        if response.status_code == 401:
-            logger.error("❌ Prokerala token expired — clearing cache")
-
-            global _CACHED_TOKEN
-            _CACHED_TOKEN = None
-
-            return None
-
-        # -------------------------
-        # OTHER ERRORS
-        # -------------------------
-        if response.status_code != 200:
-            logger.error(
-                f"❌ Prokerala API error {response.status_code}: {response.text}"
-            )
-            return None
-
-        # -------------------------
-        # SUCCESS
-        # -------------------------
-        data = response.json()
-        chart = data.get("data", {})
-
-        return {
-            "lagna": chart.get("ascendant", {}).get("sign"),
-            "moon_sign": chart.get("moon", {}).get("sign"),
-            "sun_sign": chart.get("sun", {}).get("sign"),
-            "current_dasha": chart.get("dasha", {}).get("current", {}).get("planet"),
-            "planets": [p.get("name") for p in chart.get("planets", [])],
-            "raw": chart
+        logger.info("🔄 Generating new Prokerala access token...")
+        url = "https://api.prokerala.com/token"
+        
+        payload = {
+            "client_id": Config.PROKERALA_CLIENT_ID,
+            "client_secret": Config.PROKERALA_CLIENT_SECRET,
+            "grant_type": "client_credentials"
         }
-
-    except Exception:
-        logger.exception("❌ Prokerala request failed")
+        
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        
+        response = requests.post(url, data=payload, headers=headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            token = data.get('access_token')
+            logger.info("✅ Prokerala token generated")
+            return token
+        else:
+            logger.error(f"❌ Failed to get token: {response.status_code} - {response.text}")
+            return None
+    
+    except Exception as e:
+        logger.error(f"❌ Error getting token: {e}")
         return None
+
+
+def fix_datetime_for_sandbox(datetime_str: str) -> str:
+    """
+    Fix datetime for Prokerala sandbox - only accepts Jan 1st
+    """
+    is_sandbox = (
+        'test' in str(Config.PROKERALA_CLIENT_ID).lower() or
+        'sandbox' in str(Config.PROKERALA_CLIENT_ID).lower() or
+        'demo' in str(Config.PROKERALA_CLIENT_ID).lower()
+    )
+    
+    if is_sandbox:
+        match = re.match(r'(\d{4})-\d{2}-\d{2}(T.+)', datetime_str)
+        if match:
+            year = match.group(1)
+            time_part = match.group(2)
+            fixed = f"{year}-01-01{time_part}"
+            logger.warning(f"⚠️ Sandbox mode: Using Jan 1st instead of original date")
+            return fixed
+    
+    return datetime_str
+
+
+def combine_datetime(dob: str, time_str: str) -> str:
+    """
+    Combine date and time into ISO datetime format
+    
+    Args:
+        dob: Date in DD-MM-YYYY format (e.g., "15-08-1990")
+        time_str: Time in HH:MM AM/PM format (e.g., "09:30 AM")
+    
+    Returns:
+        ISO datetime string (e.g., "1990-08-15T09:30:00+05:30")
+    """
+    try:
+        # Parse date (DD-MM-YYYY)
+        day, month, year = dob.split('-')
+        
+        # Parse time (HH:MM AM/PM)
+        time_str = time_str.strip().upper()
+        
+        # Handle 12-hour format
+        if 'AM' in time_str or 'PM' in time_str:
+            time_part = time_str.replace('AM', '').replace('PM', '').strip()
+            hours, minutes = time_part.split(':')
+            hours = int(hours)
+            minutes = int(minutes)
+            
+            # Convert to 24-hour format
+            if 'PM' in time_str and hours != 12:
+                hours += 12
+            elif 'AM' in time_str and hours == 12:
+                hours = 0
+        else:
+            # Already 24-hour format
+            hours, minutes = map(int, time_str.split(':'))
+        
+        # Create ISO format: YYYY-MM-DDTHH:MM:SS+05:30
+        iso_datetime = f"{year}-{month}-{day}T{hours:02d}:{minutes:02d}:00+05:30"
+        
+        return iso_datetime
+    
+    except Exception as e:
+        logger.error(f"❌ Error combining datetime: {e}")
+        logger.error(f"   dob={dob}, time_str={time_str}")
+        return None
+
+
+def get_kundali_data(datetime_str, lat, lon):
+    """
+    Get kundali data from Prokerala API
+    
+    Args:
+        datetime_str: ISO datetime (e.g., "1990-08-15T09:30:00+05:30")
+        lat: Latitude
+        lon: Longitude
+    
+    Returns:
+        dict: Kundali data from Prokerala
+    """
+    logger.info(f"🌌 Prokerala request -> {datetime_str}")
+    
+    # FIX: Handle sandbox mode
+    datetime_str = fix_datetime_for_sandbox(datetime_str)
+    
+    try:
+        token = get_access_token()
+        
+        if not token:
+            logger.error("❌ Could not obtain access token")
+            return None
+        
+        url = "https://api.prokerala.com/v2/astrology/kundli"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+        
+        params = {
+            "ayanamsa": 1,
+            "coordinates": f"{lat},{lon}",
+            "datetime": datetime_str,
+            "chart_type": "rasi"
+        }
+        
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        
+        if response.status_code == 200:
+            logger.info("✅ Prokerala kundali data received")
+            return response.json()
+        else:
+            logger.error(f"❌ Prokerala API error {response.status_code}: {response.text}")
+            return None
+    
+    except Exception as e:
+        logger.error(f"❌ Prokerala API exception: {e}")
+        return None
+
+
+def get_prokerala_data(**kwargs):
+    """
+    Backward compatibility wrapper
+    
+    Accepts various parameter combinations:
+    - dob + time_str + latitude + longitude
+    - datetime_str + lat + lon
+    """
+    # Check if we have separate dob and time_str
+    if 'dob' in kwargs and 'time_str' in kwargs:
+        dob = kwargs['dob']
+        time_str = kwargs['time_str']
+        lat = kwargs.get('latitude') or kwargs.get('lat')
+        lon = kwargs.get('longitude') or kwargs.get('lon')
+        
+        # Combine date and time
+        datetime_str = combine_datetime(dob, time_str)
+        
+        if not datetime_str:
+            return None
+        
+        return get_kundali_data(datetime_str, lat, lon)
+    
+    # Check for datetime_str directly
+    elif 'datetime_str' in kwargs or 'dob' in kwargs:
+        datetime_str = kwargs.get('datetime_str') or kwargs.get('dob')
+        lat = kwargs.get('latitude') or kwargs.get('lat')
+        lon = kwargs.get('longitude') or kwargs.get('lon')
+        
+        return get_kundali_data(datetime_str, lat, lon)
+    
+    else:
+        logger.error("❌ Invalid parameters for get_prokerala_data")
+        return None
+
+
+__all__ = ['get_kundali_data', 'get_prokerala_data', 'get_access_token']
